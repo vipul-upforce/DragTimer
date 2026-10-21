@@ -29,7 +29,7 @@
 
 Most Mac timers bury duration behind menus and number pads. **DragTimer** turns setting a timer into a gesture: grab the menu bar icon, drag, and let go. Instant countdown. No Dock clutter. Built for focus work, cooking, Pomodoro-style sessions, and quick reminders.
 
-Inspired by the interaction idea behind Gestimer — this is an **original open-source implementation** (no Gestimer source, branding, or assets).
+Inspired by the interaction idea behind Gestimer — this is an **original open-source implementation**.
 
 ## Download
 
