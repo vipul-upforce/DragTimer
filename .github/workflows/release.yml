@@ -10,41 +10,10 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Generate Xcode project
-        run: ./make-project.sh
-
-      - name: Build Release app
-        run: |
-          xcodebuild \
-            -project DragTimer.xcodeproj \
-            -scheme DragTimer \
-            -configuration Release \
-            -derivedDataPath .build \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          mkdir -p dist
-          rm -rf dist/DragTimer.app
-          cp -R .build/Build/Products/Release/DragTimer.app dist/DragTimer.app
-          codesign -s - --force --deep dist/DragTimer.app
-
-      - name: Package zip
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          export COPYFILE_DISABLE=1
-          (
-            cd dist
-            ditto -c -k --keepParent --norsrc --noextattr --noqtn DragTimer.app "DragTimer-${VERSION}-macos.zip"
-          )
-          echo "ASSET=dist/DragTimer-${VERSION}-macos.zip" >> "$GITHUB_ENV"
-          ls -lh dist/*.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -71,4 +40,4 @@ jobs:
             - Multiple timers · notifications · Focus/DND popup
             - Reminders sync · Launch at Login · Settings
           files: |
-            dist/DragTimer-*-macos.zip
+            releases/DragTimer-*-macos.zip

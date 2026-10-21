@@ -81,3 +81,7 @@ xcconfig.local
 # Logs & crash reports
 *.log
 crash_reports/
+
+# Keep packaged releases for GitHub Releases workflow
+!releases/
+!releases/*.zip
