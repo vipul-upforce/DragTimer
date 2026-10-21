@@ -1,0 +1,33 @@
+name: DragTimer
+options:
+  bundleIdPrefix: com.upforcetech
+  deploymentTarget:
+    macOS: '13.0'
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    MACOSX_DEPLOYMENT_TARGET: 13.0
+targets:
+  DragTimer:
+    type: application
+    platform: macOS
+    sources:
+      - path: DragTimer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.upforcetech.DragTimer
+        PRODUCT_NAME: DragTimer
+        INFOPLIST_FILE: DragTimer/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets:
+        - DragTimerTests
+  DragTimerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: DragTimerTests
+    dependencies:
+      - target: DragTimer

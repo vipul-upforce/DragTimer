@@ -1,0 +1,83 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Xcode / build
+.build/
+build/
+DerivedData/
+dist/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# XcodeGen (regenerate with ./make-project.sh) — keep project.yml
+# Commit the .xcodeproj for clone-and-open convenience; never user data:
+DragTimer.xcodeproj/project.xcworkspace/xcuserdata/
+DragTimer.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# CocoaPods / Carthage (unused, but safe)
+Pods/
+Carthage/Build/
+Carthage/Checkouts/
+
+# Secrets & credentials — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+secrets/
+credentials/
+**/GoogleService-Info.plist
+**/AuthKey_*.p8
+**/id_rsa
+**/id_ed25519
+*.key
+*.cert
+xcconfig.local
+*.xcconfig.local
+
+# IDE / tooling
+.idea/
+*.swp
+*~
+.vscode/
+.cursor/
+*.code-workspace
+
+# Archives & packages
+*.dmg
+*.zip
+*.tar.gz
+
+# Logs & crash reports
+*.log
+crash_reports/
