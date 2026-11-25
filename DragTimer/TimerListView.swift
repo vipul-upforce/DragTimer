@@ -45,9 +45,7 @@ struct TimerListView: View {
         .onAppear {
             showingSettings = startsInSettings
             if let initialFocusTimerID {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    focusedTimerID = initialFocusTimerID
-                }
+                focusTimer(initialFocusTimerID)
             }
         }
         .onChange(of: showingSettings) { isSettings in
@@ -55,6 +53,17 @@ struct TimerListView: View {
                 focusedTimerID = nil
             }
             onShowingSettingsChange?(isSettings)
+        }
+    }
+
+    private func focusTimer(_ id: UUID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+            focusedTimerID = id
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            if focusedTimerID == nil {
+                focusedTimerID = id
+            }
         }
     }
 
@@ -137,7 +146,7 @@ struct TimerListView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
+                    VStack(spacing: 0) {
                         ForEach(store.activeTimers) { timer in
                             TimerRow(timer: timer, store: store, focusedTimerID: $focusedTimerID)
                                 .id(timer.id)
@@ -277,6 +286,7 @@ private struct TimerRow: View {
     @ObservedObject var store: TimerStore
     var focusedTimerID: FocusState<UUID?>.Binding
     @State private var title: String = ""
+    @State private var originalTitle: String = ""
 
     private var isFocused: Bool {
         focusedTimerID.wrappedValue == timer.id
@@ -304,6 +314,7 @@ private struct TimerRow: View {
                     }
                     .onSubmit {
                         store.updateTitle(id: timer.id, title: title)
+                        originalTitle = title
                         focusedTimerID.wrappedValue = nil
                     }
                     .onChange(of: title) { newValue in
@@ -313,6 +324,19 @@ private struct TimerRow: View {
                         if title != newValue {
                             title = newValue
                         }
+                    }
+                    .onChange(of: isFocused) { focused in
+                        if focused {
+                            originalTitle = title
+                        } else {
+                            originalTitle = title
+                        }
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .dragTimerCancelTextEdit)) { _ in
+                        guard isFocused else { return }
+                        title = originalTitle
+                        store.updateTitle(id: timer.id, title: originalTitle)
+                        focusedTimerID.wrappedValue = nil
                     }
                 Text(remainingText)
                     .font(.system(.caption, design: .monospaced))
@@ -332,7 +356,10 @@ private struct TimerRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .onAppear { title = timer.title }
+        .onAppear {
+            title = timer.title
+            originalTitle = timer.title
+        }
     }
 
     private var remainingText: String {

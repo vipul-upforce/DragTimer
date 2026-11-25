@@ -153,12 +153,11 @@ final class DragCaptureOverlay {
     private func finish(at point: NSPoint, flags: NSEvent.ModifierFlags) {
         guard active else { return }
         let wasDragging = dragging
+        teardown()
         if wasDragging {
             onDragChanged?(point, flags)
             onDragEnded?(point, flags)
-        }
-        teardown()
-        if !wasDragging {
+        } else {
             onClick?()
         }
     }

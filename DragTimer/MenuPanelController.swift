@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let dragTimerCancelTextEdit = Notification.Name("DragTimerCancelTextEdit")
+}
+
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -93,6 +97,7 @@ final class MenuPanelController {
     private func handleEscape() -> Bool {
         guard panel.isVisible else { return false }
         if panel.firstResponder is NSTextView {
+            NotificationCenter.default.post(name: .dragTimerCancelTextEdit, object: panel)
             panel.makeFirstResponder(nil)
             return true
         }
@@ -113,6 +118,13 @@ final class MenuPanelController {
         panel.makeKeyAndOrderFront(nil)
         // Re-assert after AppKit commits first layout.
         place(height: mainHeight)
+        if timerID != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                guard let self, self.panel.isVisible else { return }
+                NSApp.activate(ignoringOtherApps: true)
+                self.panel.makeKey()
+            }
+        }
         installClickOutsideMonitor()
     }
 
