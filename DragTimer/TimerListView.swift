@@ -17,7 +17,6 @@ struct TimerListView: View {
     var presentationID: UUID = UUID()
     @State private var showingSettings = false
     @State private var remindersAccessDenied = false
-    @FocusState private var focusedTimerID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,26 +43,12 @@ struct TimerListView: View {
         .id(presentationID)
         .onAppear {
             showingSettings = startsInSettings
-            if let initialFocusTimerID {
-                focusTimer(initialFocusTimerID)
-            }
         }
         .onChange(of: showingSettings) { isSettings in
             if isSettings {
-                focusedTimerID = nil
+                NSApp.keyWindow?.makeFirstResponder(nil)
             }
             onShowingSettingsChange?(isSettings)
-        }
-    }
-
-    private func focusTimer(_ id: UUID) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-            focusedTimerID = id
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-            if focusedTimerID == nil {
-                focusedTimerID = id
-            }
         }
     }
 
@@ -148,8 +133,12 @@ struct TimerListView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(store.activeTimers) { timer in
-                            TimerRow(timer: timer, store: store, focusedTimerID: $focusedTimerID)
-                                .id(timer.id)
+                            TimerRow(
+                                timer: timer,
+                                store: store,
+                                autoFocus: timer.id == initialFocusTimerID
+                            )
+                            .id(timer.id)
                             Divider().padding(.leading, 14)
                         }
                         quickButtons.padding(.vertical, 12)
@@ -284,60 +273,38 @@ struct TimerListView: View {
 private struct TimerRow: View {
     let timer: TimerItem
     @ObservedObject var store: TimerStore
-    var focusedTimerID: FocusState<UUID?>.Binding
+    let autoFocus: Bool
     @State private var title: String = ""
-    @State private var originalTitle: String = ""
-
-    private var isFocused: Bool {
-        focusedTimerID.wrappedValue == timer.id
-    }
+    @State private var isEditing = false
 
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                TextField("Add reminder label…", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .focused(focusedTimerID, equals: timer.id)
-                    .padding(.horizontal, isFocused ? 6 : 0)
-                    .padding(.vertical, isFocused ? 3 : 0)
-                    .background {
-                        if isFocused {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
-                                }
-                        }
-                    }
-                    .onSubmit {
-                        store.updateTitle(id: timer.id, title: title)
-                        originalTitle = title
-                        focusedTimerID.wrappedValue = nil
-                    }
-                    .onChange(of: title) { newValue in
+                LabelTextField(
+                    text: $title,
+                    placeholder: "Add reminder label…",
+                    autoFocus: autoFocus,
+                    isEditing: $isEditing,
+                    onChange: { newValue in
                         store.updateTitle(id: timer.id, title: newValue)
+                    },
+                    onCommit: { finalValue in
+                        store.updateTitle(id: timer.id, title: finalValue)
                     }
-                    .onChange(of: timer.title) { newValue in
-                        if title != newValue {
-                            title = newValue
-                        }
+                )
+                .frame(height: 20)
+                .padding(.horizontal, isEditing ? 6 : 0)
+                .padding(.vertical, isEditing ? 2 : 0)
+                .background {
+                    if isEditing {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                            }
                     }
-                    .onChange(of: isFocused) { focused in
-                        if focused {
-                            originalTitle = title
-                        } else {
-                            originalTitle = title
-                        }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: .dragTimerCancelTextEdit)) { _ in
-                        guard isFocused else { return }
-                        title = originalTitle
-                        store.updateTitle(id: timer.id, title: originalTitle)
-                        focusedTimerID.wrappedValue = nil
-                    }
+                }
                 Text(remainingText)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -358,7 +325,11 @@ private struct TimerRow: View {
         .padding(.vertical, 10)
         .onAppear {
             title = timer.title
-            originalTitle = timer.title
+        }
+        .onChange(of: timer.title) { newValue in
+            if title != newValue {
+                title = newValue
+            }
         }
     }
 
@@ -369,5 +340,116 @@ private struct TimerRow: View {
         let s = remaining % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%02d:%02d", m, s)
+    }
+}
+
+private struct LabelTextField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let autoFocus: Bool
+    @Binding var isEditing: Bool
+    let onChange: (String) -> Void
+    let onCommit: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = .systemFont(ofSize: 13, weight: .medium)
+        field.placeholderString = placeholder
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.delegate = context.coordinator
+        field.stringValue = text
+        return field
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if nsView.stringValue != text, nsView.currentEditor() == nil {
+            nsView.stringValue = text
+        }
+        if autoFocus && !context.coordinator.didAutoFocus {
+            context.coordinator.scheduleAutoFocus(for: nsView)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: LabelTextField
+        var originalText: String = ""
+        var didAutoFocus = false
+
+        init(_ parent: LabelTextField) {
+            self.parent = parent
+            self.originalText = parent.text
+        }
+
+        func scheduleAutoFocus(for field: NSTextField) {
+            didAutoFocus = true
+            let delays: [TimeInterval] = [0.02, 0.08, 0.18]
+            for delay in delays {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak field] in
+                    guard let field, let window = field.window, window.isVisible else { return }
+                    if field.currentEditor() != nil { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    window.makeFirstResponder(field)
+                }
+            }
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            originalText = field.stringValue
+            DispatchQueue.main.async {
+                self.parent.isEditing = true
+            }
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            let value = field.stringValue
+            parent.text = value
+            parent.onChange(value)
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            let value = field.stringValue
+            originalText = value
+            parent.text = value
+            parent.onCommit(value)
+            DispatchQueue.main.async {
+                self.parent.isEditing = false
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard let field = control as? NSTextField else { return false }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                field.stringValue = originalText
+                parent.text = originalText
+                parent.onChange(originalText)
+                field.window?.makeFirstResponder(nil)
+                return true
+            }
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                let value = field.stringValue
+                originalText = value
+                parent.text = value
+                parent.onCommit(value)
+                field.window?.makeFirstResponder(nil)
+                return true
+            }
+            return false
+        }
     }
 }

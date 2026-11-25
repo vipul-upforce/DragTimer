@@ -1,10 +1,6 @@
 import AppKit
 import SwiftUI
 
-extension Notification.Name {
-    static let dragTimerCancelTextEdit = Notification.Name("DragTimerCancelTextEdit")
-}
-
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -97,9 +93,8 @@ final class MenuPanelController {
     private func handleEscape() -> Bool {
         guard panel.isVisible else { return false }
         if panel.firstResponder is NSTextView {
-            NotificationCenter.default.post(name: .dragTimerCancelTextEdit, object: panel)
-            panel.makeFirstResponder(nil)
-            return true
+            // Let the active NSTextField's field editor handle Escape (revert + resign).
+            return false
         }
         hide()
         return true
