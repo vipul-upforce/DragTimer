@@ -68,4 +68,17 @@ final class ReminderSync {
             }
         }
     }
+
+    func updateReminderTitle(identifier: String, title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle = trimmed.isEmpty ? "Timer" : trimmed
+        guard let reminder = store.calendarItem(withIdentifier: identifier) as? EKReminder else { return }
+        guard reminder.title != resolvedTitle else { return }
+        reminder.title = resolvedTitle
+        do {
+            try store.save(reminder, commit: true)
+        } catch {
+            NSLog("DragTimer: failed to update Reminder title: \(error.localizedDescription)")
+        }
+    }
 }

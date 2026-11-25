@@ -12,10 +12,12 @@ struct TimerListView: View {
     /// resize while keeping its top edge pinned under the menu bar.
     var onShowingSettingsChange: ((Bool) -> Void)? = nil
     var startsInSettings: Bool = false
+    var initialFocusTimerID: UUID? = nil
     /// Bumped on each panel open so SwiftUI drops preserved `@State` (e.g. settings).
     var presentationID: UUID = UUID()
     @State private var showingSettings = false
     @State private var remindersAccessDenied = false
+    @FocusState private var focusedTimerID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,8 +44,16 @@ struct TimerListView: View {
         .id(presentationID)
         .onAppear {
             showingSettings = startsInSettings
+            if let initialFocusTimerID {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    focusedTimerID = initialFocusTimerID
+                }
+            }
         }
         .onChange(of: showingSettings) { isSettings in
+            if isSettings {
+                focusedTimerID = nil
+            }
             onShowingSettingsChange?(isSettings)
         }
     }
@@ -125,16 +135,24 @@ struct TimerListView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(store.activeTimers) { timer in
-                        TimerRow(timer: timer, store: store)
-                        Divider().padding(.leading, 14)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(store.activeTimers) { timer in
+                            TimerRow(timer: timer, store: store, focusedTimerID: $focusedTimerID)
+                                .id(timer.id)
+                            Divider().padding(.leading, 14)
+                        }
+                        quickButtons.padding(.vertical, 12)
                     }
-                    quickButtons.padding(.vertical, 12)
+                }
+                .frame(maxHeight: 360)
+                .onAppear {
+                    if let initialFocusTimerID {
+                        proxy.scrollTo(initialFocusTimerID, anchor: .center)
+                    }
                 }
             }
-            .frame(maxHeight: 360)
         }
     }
 
@@ -257,17 +275,44 @@ struct TimerListView: View {
 private struct TimerRow: View {
     let timer: TimerItem
     @ObservedObject var store: TimerStore
+    var focusedTimerID: FocusState<UUID?>.Binding
     @State private var title: String = ""
+
+    private var isFocused: Bool {
+        focusedTimerID.wrappedValue == timer.id
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                TextField("Timer title", text: $title)
+                TextField("Add reminder label…", text: $title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .medium))
-                    .onSubmit { store.updateTitle(id: timer.id, title: title) }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .focused(focusedTimerID, equals: timer.id)
+                    .padding(.horizontal, isFocused ? 6 : 0)
+                    .padding(.vertical, isFocused ? 3 : 0)
+                    .background {
+                        if isFocused {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.primary.opacity(0.06))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                                }
+                        }
+                    }
+                    .onSubmit {
+                        store.updateTitle(id: timer.id, title: title)
+                        focusedTimerID.wrappedValue = nil
+                    }
                     .onChange(of: title) { newValue in
                         store.updateTitle(id: timer.id, title: newValue)
+                    }
+                    .onChange(of: timer.title) { newValue in
+                        if title != newValue {
+                            title = newValue
+                        }
                     }
                 Text(remainingText)
                     .font(.system(.caption, design: .monospaced))

@@ -1,6 +1,29 @@
 import AppKit
 import SwiftUI
 
+private final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    var onEscape: (() -> Bool)?
+    var onCloseShortcut: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        if onEscape?() == true { return }
+        super.cancelOperation(sender)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "w" {
+            onCloseShortcut?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 /// Menu panel pinned under the status item.
 ///
 /// Size is owned entirely by us (no SwiftUI intrinsic window resizing).
@@ -8,10 +31,11 @@ import SwiftUI
 /// cannot leave a gap under the menu bar.
 @MainActor
 final class MenuPanelController {
-    private let panel: NSPanel
+    private let panel: KeyablePanel
     private let hostingController: NSHostingController<TimerListView>
     private var clickOutsideLocal: Any?
     private var clickOutsideGlobal: Any?
+    private var keyMonitor: Any?
     private weak var anchor: NSView?
 
     private let store: TimerStore
@@ -40,7 +64,7 @@ final class MenuPanelController {
             hostingController.sizingOptions = []
         }
 
-        panel = NSPanel(
+        panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: mainHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -53,20 +77,36 @@ final class MenuPanelController {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.animationBehavior = .none
         panel.contentViewController = hostingController
+        panel.onEscape = { [weak self] in
+            self?.handleEscape() ?? false
+        }
+        panel.onCloseShortcut = { [weak self] in
+            self?.hide()
+        }
 
         refreshRoot()
+    }
+
+    private func handleEscape() -> Bool {
+        guard panel.isVisible else { return false }
+        if panel.firstResponder is NSTextView {
+            panel.makeFirstResponder(nil)
+            return true
+        }
+        hide()
+        return true
     }
 
     func toggle(relativeTo anchor: NSView) {
         if panel.isVisible { hide() } else { show(relativeTo: anchor) }
     }
 
-    func show(relativeTo anchor: NSView) {
+    func show(relativeTo anchor: NSView, focusingTimer timerID: UUID? = nil) {
         self.anchor = anchor
-        refreshRoot()
+        refreshRoot(focusingTimer: timerID)
         pinnedTop = nil
         place(height: mainHeight)
         NSApp.activate(ignoringOtherApps: true)
@@ -78,11 +118,12 @@ final class MenuPanelController {
 
     func hide() {
         removeClickOutsideMonitor()
+        panel.makeFirstResponder(nil)
         panel.orderOut(nil)
         pinnedTop = nil
     }
 
-    private func refreshRoot() {
+    private func refreshRoot(focusingTimer timerID: UUID? = nil) {
         hostingController.rootView = TimerListView(
             store: store,
             launchAtLogin: .shared,
@@ -97,6 +138,7 @@ final class MenuPanelController {
                 self.place(height: showing ? self.settingsHeight : self.mainHeight)
             },
             startsInSettings: false,
+            initialFocusTimerID: timerID,
             presentationID: UUID()
         )
     }
@@ -164,6 +206,14 @@ final class MenuPanelController {
                 if self.shouldDismissForOutsideClick() { self.hide() }
             }
         }
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.panel.isVisible, self.panel.isKeyWindow else { return event }
+            if event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}" {
+                if self.handleEscape() { return nil }
+            }
+            return event
+        }
     }
 
     private func shouldDismissForOutsideClick() -> Bool {
@@ -191,6 +241,10 @@ final class MenuPanelController {
         if let clickOutsideGlobal {
             NSEvent.removeMonitor(clickOutsideGlobal)
             self.clickOutsideGlobal = nil
+        }
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
         }
     }
 }

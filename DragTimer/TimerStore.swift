@@ -12,6 +12,7 @@ final class TimerStore: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private var heartbeat: Timer?
+    private var reminderTitleTasks: [UUID: Task<Void, Never>] = [:]
 
     private enum Keys {
         static let timers = "dragTimer.timers.v1"
@@ -49,6 +50,9 @@ final class TimerStore: ObservableObject {
                     self.timers[index].reminderIdentifier = identifier
                     item.reminderIdentifier = identifier
                     self.save()
+                    if self.timers[index].displayTitle != item.displayTitle {
+                        ReminderSync.shared.updateReminderTitle(identifier: identifier, title: self.timers[index].displayTitle)
+                    }
                 }
             }
         }
@@ -57,9 +61,21 @@ final class TimerStore: ObservableObject {
 
     func updateTitle(id: UUID, title: String) {
         guard let index = timers.firstIndex(where: { $0.id == id }) else { return }
+        guard timers[index].title != title else { return }
         timers[index].title = title
         NotificationManager.shared.schedule(timers[index])
         save()
+
+        if let reminderID = timers[index].reminderIdentifier {
+            reminderTitleTasks[id]?.cancel()
+            reminderTitleTasks[id] = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled,
+                      let self,
+                      let current = self.timers.first(where: { $0.id == id }) else { return }
+                ReminderSync.shared.updateReminderTitle(identifier: reminderID, title: current.displayTitle)
+            }
+        }
     }
 
     func cancel(id: UUID) {

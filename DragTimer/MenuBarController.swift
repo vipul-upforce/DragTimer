@@ -153,9 +153,9 @@ final class MenuBarController: NSObject {
         }
     }
 
-    private func showMenu() {
+    private func showMenu(focusingTimer timerID: UUID? = nil) {
         guard let button = statusItem.button else { return }
-        menuPanel.show(relativeTo: button)
+        menuPanel.show(relativeTo: button, focusingTimer: timerID)
     }
 
     private func hideMenu() {
@@ -195,9 +195,8 @@ final class MenuBarController: NSObject {
         capturing = false
         dragStart = nil
         currentDuration = 0
-        if duration >= 60 {
-            _ = store.addTimer(seconds: duration)
-            showMenu()
+        if duration >= 60, let id = store.addTimer(seconds: duration) {
+            showMenu(focusingTimer: id)
         }
     }
 
@@ -226,8 +225,8 @@ final class MenuBarController: NSObject {
         hud.hide()
         let duration = currentDuration
         currentDuration = 0
-        if duration >= 60 {
-            _ = store.addTimer(seconds: duration)
+        if duration >= 60, let id = store.addTimer(seconds: duration) {
+            showMenu(focusingTimer: id)
         }
     }
 
