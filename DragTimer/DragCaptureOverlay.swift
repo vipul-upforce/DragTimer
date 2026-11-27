@@ -1,12 +1,19 @@
 import AppKit
+import CoreGraphics
 
-/// Full-screen transparent panel that owns the Gestimer drag after mouse-down
-/// on the status item. Showing this immediately prevents macOS 27 Mission Control
-/// from stealing the downward drag from the menu bar.
+private final class OverlayPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+/// Full-screen transparent panels (one per screen) that own the Gestimer drag
+/// after mouse-down on the status item. Per-screen panels ensure the drag line
+/// renders across all displays even when "Displays have separate Spaces" is on.
 @MainActor
 final class DragCaptureOverlay {
-    private var panel: NSPanel?
-    private var canvas: DragLineCanvas?
+    private var panels: [OverlayPanel] = []
+    private var canvases: [DragLineCanvas] = []
+    private weak var keyPanel: OverlayPanel?
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var keyMonitor: Any?
@@ -29,30 +36,39 @@ final class DragCaptureOverlay {
         startPoint = start
         dragging = false
 
-        let frame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { $0.union($1) }
-        let panel = NSPanel(
-            contentRect: frame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.level = .screenSaver
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = false
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        let screens = NSScreen.screens
+        for screen in screens {
+            let frame = screen.frame
+            let panel = OverlayPanel(
+                contentRect: frame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .screenSaver
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.ignoresMouseEvents = false
+            panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let canvas = DragLineCanvas(frame: NSRect(origin: .zero, size: frame.size))
-        canvas.origin = start
-        canvas.cursor = start
-        canvas.isActive = false
-        panel.contentView = canvas
-        panel.setFrame(frame, display: true)
-        panel.orderFrontRegardless()
-        self.panel = panel
-        self.canvas = canvas
+            let canvas = DragLineCanvas(frame: NSRect(origin: .zero, size: frame.size))
+            canvas.origin = start
+            canvas.cursor = start
+            canvas.isActive = false
+            panel.contentView = canvas
+            panel.setFrame(frame, display: true)
+            panel.orderFrontRegardless()
+            panels.append(panel)
+            canvases.append(canvas)
+            if frame.contains(start) {
+                keyPanel = panel
+            }
+        }
+        if keyPanel == nil {
+            keyPanel = panels.first
+        }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDragged, .leftMouseUp, .flagsChanged, .keyDown]
@@ -103,6 +119,10 @@ final class DragCaptureOverlay {
 
     private func poll() {
         guard active else { return }
+        if CGEventSource.keyState(.combinedSessionState, key: 53) {
+            cancel(silent: false)
+            return
+        }
         let pressed = NSEvent.pressedMouseButtons & (1 << 0) != 0
         let point = NSEvent.mouseLocation
         let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -134,18 +154,25 @@ final class DragCaptureOverlay {
         let distance = hypot(point.x - startPoint.x, point.y - startPoint.y)
         if !dragging, distance >= dragThreshold {
             dragging = true
-            canvas?.isActive = true
-            canvas?.origin = startPoint
+            NSApp.activate(ignoringOtherApps: true)
+            keyPanel?.makeKeyAndOrderFront(nil)
+            for canvas in canvases {
+                canvas.isActive = true
+                canvas.origin = startPoint
+            }
             onDragBegan?(startPoint)
         }
         if dragging {
-            canvas?.cursor = point
             let duration = DurationMapper.seconds(
                 for: distance,
                 optionMultiplier: flags.contains(.option),
                 precisionMode: flags.contains(.shift)
             )
-            canvas?.progress = duration >= 60 ? 1 : max(0, min(0.95, CGFloat(distance / 80)))
+            let progress: CGFloat = duration >= 60 ? 1 : max(0, min(0.95, CGFloat(distance / 80)))
+            for canvas in canvases {
+                canvas.cursor = point
+                canvas.progress = progress
+            }
             onDragChanged?(point, flags)
         }
     }
@@ -188,10 +215,15 @@ final class DragCaptureOverlay {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
         }
-        canvas?.isActive = false
-        canvas = nil
-        panel?.orderOut(nil)
-        panel = nil
+        for canvas in canvases {
+            canvas.isActive = false
+        }
+        canvases.removeAll()
+        for panel in panels {
+            panel.orderOut(nil)
+        }
+        panels.removeAll()
+        keyPanel = nil
         dragging = false
     }
 }
